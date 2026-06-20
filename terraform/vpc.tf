@@ -1,6 +1,6 @@
 data "aws_availability_zones" "available" {}
 
-# Documentación del módulo VPC: https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws/latest
+# Documentación del módulo VPC (v5.8.0): https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws/5.8.0
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.8.0"

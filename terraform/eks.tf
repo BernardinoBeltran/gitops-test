@@ -1,4 +1,4 @@
-# Documentación del módulo EKS: https://registry.terraform.io/modules/terraform-aws-modules/eks/aws/latest
+# Documentación del módulo EKS (v20.15.0): https://registry.terraform.io/modules/terraform-aws-modules/eks/aws/20.15.0
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.15.0"
