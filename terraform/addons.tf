@@ -1,3 +1,4 @@
+# Documentación del módulo Blueprints Addons: https://registry.terraform.io/modules/aws-ia/eks-blueprints-addons/aws/latest
 module "eks_blueprints_addons" {
   source  = "aws-ia/eks-blueprints-addons/aws"
   version = "~> 1.16.0"
