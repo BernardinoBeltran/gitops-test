@@ -51,7 +51,13 @@ Para tener enrutamiento de red mediante nombres de dominio o rutas en Kubernetes
    ```bash
    terraform apply -auto-approve
    ```
-   *(Tardará unos 10-12 minutos en completarse).*
+   *(Tardará unos 15 minutos en completarse).*
+
+> [!TIP]
+> **🔍 Comprobación:** Al finalizar con éxito, la terminal debe mostrar los outputs de Terraform en verde:
+> * `s3_bucket_name` y `s3_iam_role_arn`
+> * `opensearch_endpoint` y `opensearch_iam_role_arn`
+
 
 ---
 
@@ -69,6 +75,10 @@ Para tener enrutamiento de red mediante nombres de dominio o rutas en Kubernetes
    ```bash
    kubectl get nodes
    ```
+
+> [!TIP]
+> **🔍 Comprobación:** Deberías ver un nodo EC2 en estado `Ready` al ejecutar `kubectl get nodes`. También puedes ejecutar `kubectl get namespaces` para ver los namespaces creados por defecto por AWS.
+
 
 ---
 
@@ -93,6 +103,10 @@ Gracias a EKS Blueprints, ArgoCD se despliega solo durante el `terraform apply`.
    * Usuario: `admin`
    * Contraseña: La que copiaste en el punto 1.
 
+> [!TIP]
+> **🔍 Comprobación:** Ejecuta `kubectl get pods -n argocd`. Todos los pods de ArgoCD (como `argocd-server`, `argocd-repo-server`, `argocd-application-controller`) deben estar en estado `Running`.
+
+
 ---
 
 ## Paso 4: Desplegar Kong usando GitOps (ArgoCD)
@@ -109,6 +123,10 @@ En lugar de teclear comandos `helm install` en tu terminal, crearemos un recurso
    kubectl get service kong-kong-proxy -n kong
    ```
    Anota la dirección DNS en la columna **`EXTERNAL-IP`**.
+
+> [!TIP]
+> **🔍 Comprobación:** Ejecuta `kubectl get pods -n kong` y verifica que el proxy y el ingress controller estén en `Running`. Si abres en tu terminal `curl -I http://<TU_DNS_DE_KONG>`, la respuesta debe ser `HTTP/1.1 404 Not Found` (esto es correcto, ya que el balanceador responde pero aún no tiene configurada ninguna ruta).
+
 
 ---
 
@@ -138,7 +156,9 @@ Si no quieres subir nada a GitHub todavía y prefieres probar Nginx directamente
 kubectl apply -f kubernetes/nginx/
 ```
 
-Una vez desplegado (por cualquiera de las opciones), abre tu navegador y entra en la dirección DNS larga del balanceador de Kong (Paso 4.3). **¡Verás la página de bienvenida de Nginx!**
+> [!TIP]
+> **🔍 Comprobación:** Ejecuta `kubectl get ingress -n demo-app` para comprobar que la regla de Ingress está activa. Abre tu navegador y entra en la dirección DNS larga del balanceador de Kong (Paso 4.3). **¡Verás la página de bienvenida de Nginx!**
+
 
 ---
 
@@ -150,12 +170,18 @@ Para llevar la práctica al siguiente nivel y probar cómo Kong gestiona múltip
 2. Registra las nuevas aplicaciones en ArgoCD ejecutando:
    ```bash
    kubectl apply -f kubernetes/argocd-app-red.yaml
+   ```
+   ```bash
    kubectl apply -f kubernetes/argocd-app-blue.yaml
    ```
 3. Ve a la consola web de ArgoCD. Verás aparecer dos nuevas aplicaciones: `app-red` y `app-blue` organizándose solas en sus namespaces dedicados.
 4. Una vez sincronizadas en verde, prueba el enrutamiento inteligente abriendo tu navegador:
    * **Acceso App Roja:** `http://<TU_DNS_DE_KONG>/red` (Se abrirá una página web personalizada con fondo rojo).
    * **Acceso App Azul:** `http://<TU_DNS_DE_KONG>/blue` (Se abrirá una página web personalizada con fondo azul).
+
+> [!TIP]
+> **🔍 Comprobación:** Ejecuta `kubectl get ingress -A` para validar que tienes activos los ingress de `app-red` y `app-blue`. Si realizas peticiones a `/red` o `/blue` y Nginx te devuelve el index correcto de color, el Ingress Path-Stripping de Kong está funcionando.
+
 
 *¿Cómo funciona la magia de Kong aquí?* 
 Kong intercepta la llamada, lee la ruta (`/red` o `/blue`), y gracias a la anotación `konghq.com/strip-path: "true"` en el recurso Ingress, elimina ese prefijo antes de enviar la llamada al Nginx interno. De esta forma, cada microservicio puede programarse ignorando la ruta base externa.
@@ -164,7 +190,7 @@ Kong intercepta la llamada, lee la ruta (`/red` o `/blue`), y gracias a la anota
 
 ## Paso 5.2: Probar Permisos IAM (Cargar HTML desde S3 privado con IRSA)
 
-Este paso lleva tu práctica a nivel enterprise al demostrar cómo tus Pods de Kubernetes pueden interactuar de forma segura con recursos de AWS (como S3) sin guardar claves estáticas:
+Este paso demuestra cómo tus Pods de Kubernetes pueden interactuar de forma segura con recursos de AWS (como S3) sin guardar claves estáticas:
 
 1. **Aplica Terraform:** Ejecuta `terraform apply` (esto creará el bucket S3 privado, subirá un archivo `index.html` y creará el Rol IAM). Al finalizar, anota los outputs:
    * `s3_bucket_name`
@@ -181,6 +207,10 @@ Este paso lleva tu práctica a nivel enterprise al demostrar cómo tus Pods de K
    ```bash
    kubectl apply -f kubernetes/argocd-app-s3.yaml
    ```
+
+> [!TIP]
+> **🔍 Comprobación:** Ejecuta `kubectl logs -n app-s3 deployment/app-s3 -c download-html` para leer los logs del contenedor de inicialización. Deberías ver la descarga del archivo completada con éxito. Abre tu navegador en `http://<TU_DNS_DE_KONG>/s3` y verás la página web verde recuperada desde S3.
+
 6. **Verifica el acceso:** Abre tu navegador y accede a `http://<TU_DNS_DE_KONG>/s3`.
    * **¿Qué está ocurriendo?** Al arrancar el pod, un *initContainer* con el AWS CLI descarga el HTML desde S3. Gracias a la ServiceAccount de Kubernetes vinculada con el Rol de IAM (IRSA), AWS autentica la petición de forma segura e instantánea.
    * **¿Quieres probar la seguridad?** Si entras en el pod y ejecutas comandos contra otro bucket de S3 privado, AWS te denegará el acceso ya que el rol asignado al pod solo permite leer este bucket concreto.
