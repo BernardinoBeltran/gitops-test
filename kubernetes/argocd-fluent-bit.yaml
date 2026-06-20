@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fluent-bit-logging
+  namespace: argocd
+  # El finalizer permite borrar ordenadamente los recursos de K8s si borramos esta App en ArgoCD
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # URL de tu repositorio de GitOps en GitHub
+    repoURL: https://github.com/BernardinoBeltran/gitops-test.git
+    targetRevision: HEAD
+    # Carpeta que contiene los manifiestos de Fluent Bit
+    path: kubernetes/fluent-bit
+  destination:
+    server: https://kubernetes.default.svc
+    # Desplegamos en el namespace logging
+    namespace: logging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # ArgoCD creará automáticamente el namespace 'logging' si no existe
+      - CreateNamespace=true

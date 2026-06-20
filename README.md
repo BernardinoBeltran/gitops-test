@@ -187,6 +187,42 @@ Este paso lleva tu práctica a nivel enterprise al demostrar cómo tus Pods de K
 
 ---
 
+## Paso 5.3: Centralización de Logs (OpenSearch + Fluent Bit)
+
+Este paso implementa la monitorización y agregación centralizada de logs a nivel de producción:
+
+1. **Obtén las variables de OpenSearch:** Ejecuta `terraform apply` en la carpeta `terraform/` y anota los nuevos outputs:
+   * `opensearch_endpoint` (URL interna privada del dominio)
+   * `opensearch_iam_role_arn` (ARN del rol IAM para el pod colector)
+2. **Configura el ServiceAccount de Fluent Bit:** Abre `kubernetes/fluent-bit/serviceaccount.yaml` y sustituye el valor de `eks.amazonaws.com/role-arn` por tu `opensearch_iam_role_arn` real.
+3. **Configura la conexión de logs:** Abre `kubernetes/fluent-bit/configmap.yaml` y en la sección del `Host` del bloque `[OUTPUT]` sustituye `ENDPOINT_OPENSEARCH_REEMPLAZAME` por tu `opensearch_endpoint` real (ej: `vpc-eks-logs-domain-xxxxx.eu-north-1.es.amazonaws.com`, **sin http/https ni barras**).
+4. **Configura el Reverse Proxy:** Abre `kubernetes/fluent-bit/proxy-nginx.yaml` y en las dos líneas que contienen `ENDPOINT_OPENSEARCH_REEMPLAZAME` sustitúyelo por tu `opensearch_endpoint` real.
+5. **Sube los cambios a tu GitHub:**
+   ```bash
+   git add kubernetes/fluent-bit/
+   git commit -m "feat: configure Fluent Bit and proxy with OpenSearch endpoint"
+   git push origin main
+   ```
+6. **Registra la aplicación de Logging en ArgoCD:**
+   ```bash
+   kubectl apply -f kubernetes/argocd-fluent-bit.yaml
+   ```
+7. **Establece un túnel seguro hacia OpenSearch Dashboards (Kibana):**
+   * Dado que el clúster de OpenSearch está aislado de forma 100% privada dentro de la VPC, ejecutaremos un túnel local hacia el Proxy Nginx que creamos en EKS:
+     ```bash
+     kubectl port-forward svc/opensearch-proxy -n logging 8080:80
+     ```
+   * Deja la terminal abierta para mantener el túnel activo.
+8. **Explora tus logs en tiempo real:**
+   * Abre en tu navegador local de tu Mac: `http://localhost:8080/_dashboards`
+   * Inicia sesión con las credenciales maestras:
+     * **Usuario:** `admin`
+     * **Contraseña:** `OpenSearchPassword123!`
+   * Ve a **Stack Management** -> **Index Patterns** -> **Create Index Pattern** y escribe `k8s-logs-*`.
+   * Ve a la pestaña **Discover** y verás fluir todos los logs de tus aplicaciones (`nginx-app`, `app-red`, `app-blue` y `app-s3`) estructurados con su metadata de Kubernetes.
+
+---
+
 ## Paso 6: Limpieza Total (Evitar Costes)
 
 Es extremadamente importante limpiar todo al terminar para evitar costes. Con este enfoque declarativo, la limpieza es facilísima:
@@ -195,7 +231,7 @@ Es extremadamente importante limpiar todo al terminar para evitar costes. Con es
    ```bash
    cd terraform
    ```
-2. Ejecuta la destrucción completa (Terraform se encargará de borrar ArgoCD, luego el clúster EKS y finalmente la VPC de forma ordenada):
+2. Ejecuta la destrucción completa (Terraform se encargará de borrar ArgoCD, el clúster EKS, la VPC y el dominio de OpenSearch de forma ordenada):
    ```bash
    terraform destroy -auto-approve
    ```
