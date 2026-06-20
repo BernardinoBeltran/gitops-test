@@ -13,10 +13,10 @@ data:
 
         location / {
             # REEMPLAZA 'ENDPOINT_OPENSEARCH_REEMPLAZAME' por tu opensearch_endpoint real de terraform (sin 'https://')
-            proxy_pass https://ENDPOINT_OPENSEARCH_REEMPLAZAME;
+            proxy_pass https://vpc-eks-logs-domain-dpofxt4cixg4ns5xv2w55xh3ha.eu-north-1.es.amazonaws.com;
             
             # Encabezados necesarios para pasar a través del balanceador y TLS de AWS
-            proxy_set_header Host ENDPOINT_OPENSEARCH_REEMPLAZAME;
+            proxy_set_header Host vpc-eks-logs-domain-dpofxt4cixg4ns5xv2w55xh3ha.eu-north-1.es.amazonaws.com;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
