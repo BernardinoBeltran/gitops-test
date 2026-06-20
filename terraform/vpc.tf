@@ -15,9 +15,6 @@ module "vpc" {
   single_nat_gateway   = true
   enable_dns_hostnames = true
 
-  # Crear un Gateway Endpoint de S3 gratuito para no pagar costes de NAT Gateway al descargar el HTML
-  enable_s3_endpoint = true
-
   public_subnet_tags = {
     "kubernetes.io/role/elb"                      = "1"
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
@@ -33,3 +30,17 @@ module "vpc" {
     Terraform   = "true"
   }
 }
+
+# Crear un Gateway Endpoint de S3 gratuito de forma nativa para no pagar costes de NAT Gateway al descargar el HTML
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = module.vpc.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = concat(module.vpc.private_route_table_ids, module.vpc.public_route_table_ids)
+
+  tags = {
+    Name        = "${var.cluster_name}-s3-endpoint"
+    Environment = "learning"
+  }
+}
+
