@@ -9,7 +9,7 @@ echo "Clúster Objetivo: $CLUSTER_NAME | Región: $REGION"
 echo "--------------------------------------------------------"
 
 # 1. CloudWatch Log Group
-echo "[1/4] Buscando grupo de logs de CloudWatch..."
+echo "[1/5] Buscando grupo de logs de CloudWatch..."
 LOG_GROUP="/aws/eks/$CLUSTER_NAME/cluster"
 if aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" --region "$REGION" --query "logGroups[?logGroupName=='$LOG_GROUP']" --output text | grep -q "$LOG_GROUP"; then
     echo "-> Encontrado: $LOG_GROUP. Eliminando..."
@@ -20,7 +20,7 @@ else
 fi
 
 # 2. Balanceadores de Carga de AWS (ELBs / ALBs / NLBs)
-echo "[2/4] Buscando balanceadores de carga huérfanos..."
+echo "[2/5] Buscando balanceadores de carga huérfanos..."
 
 # Classic ELBs
 CLASSIC_ELBS=$(aws elb describe-load-balancers --region "$REGION" --query "LoadBalancerDescriptions[*].LoadBalancerName" --output text 2>/dev/null)
@@ -44,7 +44,7 @@ for arn in $V2_ELB_ARNS; do
 done
 
 # 3. Discos duros EBS huérfanos (Persistent Volumes en estado disponible)
-echo "[3/4] Buscando discos EBS huérfanos..."
+echo "[3/5] Buscando discos EBS huérfanos..."
 ORPHANED_VOLUMES=$(aws ec2 describe-volumes --region "$REGION" \
     --filters "Name=tag-key,Values=kubernetes.io/cluster/$CLUSTER_NAME" "Name=status,Values=available" \
     --query "Volumes[*].VolumeId" --output text 2>/dev/null)
@@ -59,7 +59,7 @@ else
 fi
 
 # 4. Interfaces de red (ENIs) huérfanas en estado disponible
-echo "[4/4] Buscando interfaces de red (ENIs) huérfanas..."
+echo "[4/5] Buscando interfaces de red (ENIs) huérfanas..."
 ORPHANED_ENIS=$(aws ec2 describe-network-interfaces --region "$REGION" \
     --filters "Name=status,Values=available" "Name=description,Values=*$CLUSTER_NAME*" \
     --query "NetworkInterfaces[*].NetworkInterfaceId" --output text 2>/dev/null)
@@ -71,6 +71,31 @@ if [ ! -z "$ORPHANED_ENIS" ] && [ "$ORPHANED_ENIS" != "None" ]; then
     done
 else
     echo "-> No se encontraron interfaces de red huérfanas."
+fi
+
+# 5. Grupos de Seguridad (Security Groups) huérfanos creados por el ELB de Kubernetes
+echo "[5/5] Buscando grupos de seguridad (Security Groups) de ELB huérfanos..."
+# Obtener el ID de la VPC asociada al clúster
+VPC_ID=$(aws ec2 describe-vpcs --region "$REGION" \
+    --filters "Name=tag-key,Values=kubernetes.io/cluster/$CLUSTER_NAME" \
+    --query "Vpcs[0].VpcId" --output text 2>/dev/null)
+
+if [ ! -z "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+    # Buscar grupos de seguridad de ELB (k8s-elb-*) en esta VPC
+    ORPHANED_SGS=$(aws ec2 describe-security-groups --region "$REGION" \
+        --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=k8s-elb-*" \
+        --query "SecurityGroups[*].GroupId" --output text 2>/dev/null)
+
+    if [ ! -z "$ORPHANED_SGS" ] && [ "$ORPHANED_SGS" != "None" ]; then
+        for sg in $ORPHANED_SGS; do
+            echo "-> Encontrado Security Group de ELB huérfano: $sg. Eliminando..."
+            aws ec2 delete-security-group --group-id "$sg" --region "$REGION" 2>/dev/null || echo "-> No se pudo eliminar $sg (aún en uso)."
+        done
+    else
+        echo "-> No se encontraron grupos de seguridad de ELB huérfanos."
+    fi
+else
+    echo "-> No se pudo determinar el ID de la VPC (el clúster o la VPC ya no existen)."
 fi
 
 echo "--------------------------------------------------------"

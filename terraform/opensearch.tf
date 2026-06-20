@@ -1,3 +1,5 @@
+data "aws_caller_identity" "current" {}
+
 # 1. Generar contraseña aleatoria segura
 resource "random_password" "opensearch_password" {
   length           = 16
@@ -8,7 +10,6 @@ resource "random_password" "opensearch_password" {
   min_special      = 1
   override_special = "!@#$%" # Caracteres especiales válidos para OpenSearch
 }
-
 # 2. Guardar la contraseña en AWS Systems Manager Parameter Store como SecureString
 resource "aws_ssm_parameter" "opensearch_admin_password" {
   name        = "/eks/learning/opensearch/admin_password"
@@ -47,6 +48,20 @@ resource "aws_security_group" "opensearch_sg" {
 resource "aws_opensearch_domain" "opensearch" {
   domain_name    = "eks-logs-domain"
   engine_version = "OpenSearch_2.11"
+
+  access_policies = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = {
+          AWS = "*"
+        }
+        Action    = "es:*"
+        Resource  = "arn:aws:es:${var.aws_region}:${data.aws_caller_identity.current.account_id}:domain/eks-logs-domain/*"
+      }
+    ]
+  })
 
   cluster_config {
     instance_type          = "t3.medium.search"
