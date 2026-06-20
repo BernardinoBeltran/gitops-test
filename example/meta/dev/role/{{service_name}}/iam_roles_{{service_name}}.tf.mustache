@@ -1,0 +1,38 @@
+//EKS SERVICE ACCOUNT {{service_name}} 
+resource "aws_iam_role" "{{service_name}}" {
+  name = "${module.mhi_helper_aws.regional_prefix_name}-${var.environment}-eks-{{service_name}}-svc-ac"
+  description = "EKS Service Account for {{service_name}}"
+  assume_role_policy = jsonencode({
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Principal": {
+                "Federated": "arn:aws:iam::083104591331:oidc-provider/oidc.eks.eu-west-1.amazonaws.com/id/${local.eks_oidc_id}"
+            },
+            "Condition": {
+                "StringEquals": {
+                    "oidc.eks.eu-west-1.amazonaws.com/id/${local.eks_oidc_id}:aud": [
+                        "sts.amazonaws.com"
+                    ]
+                }
+            }
+        }
+    ]
+})
+  
+  tags = merge(var.tags, { 
+      "Name" = "${module.mhi_helper_aws.regional_prefix_name}-${var.environment}-eks-{{service_name}}-svc-ac" 
+      "description"   = "EKS Service Account for {{service_name}}"
+      })
+}
+
+resource "aws_iam_role_policy_attachment" "{{service_name}}-role-attachment" {
+  for_each = toset([
+    aws_iam_policy.eks-s3-{{service_name}}.arn
+  ])
+
+  role       = aws_iam_role.{{service_name}}.name
+  policy_arn = each.value
+}

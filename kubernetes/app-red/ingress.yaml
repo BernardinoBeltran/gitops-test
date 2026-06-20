@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-red-ingress
+  namespace: app-red
+  annotations:
+    kubernetes.io/ingress.class: kong
+    # Le dice a Kong que elimine el prefijo "/red" antes de enviar la petición a Nginx
+    # (así Nginx recibe "/" y sirve correctamente nuestro index.html)
+    konghq.com/strip-path: "true"
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /red
+        pathType: Prefix
+        backend:
+          service:
+            name: app-red-service
+            port:
+              number: 80

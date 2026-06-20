@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-blue-webpage
+  namespace: app-blue
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>App Azul</title>
+      <style>
+        body { 
+          background-color: #cce5ff; 
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+          text-align: center; 
+          padding-top: 100px;
+          margin: 0;
+        }
+        .container {
+          background: white;
+          display: inline-block;
+          padding: 40px;
+          border-radius: 12px;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        h1 { 
+          color: #004085; 
+          font-size: 36px; 
+          margin-bottom: 10px;
+        }
+        p {
+          color: #555;
+          font-size: 18px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>¡Hola desde la Aplicación AZUL! 🔵</h1>
+        <p>Esta es otra app independiente desplegada con ArgoCD y ruteada a través de Kong.</p>
+      </div>
+    </body>
+    </html>

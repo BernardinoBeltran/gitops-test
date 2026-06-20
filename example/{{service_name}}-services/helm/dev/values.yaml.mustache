@@ -1,0 +1,11 @@
+release_tag: 'latest'
+dns_name: '{{{dns_dev}}}'
+env: {{#env_dev}}
+  - key:  {{{key}}}
+    value: '{{{value}}}'{{/env_dev}}
+limit_cpu: '{{{limit_cpu_dev}}}'
+limit_memory: '{{{limit_memory_dev}}}'
+request_cpu: '{{{request_cpu_dev}}}'
+request_memory: '{{{request_memory_dev}}}'
+ruta: '{{{ruta}}}'
+service_name: '{{{service_name}}}'

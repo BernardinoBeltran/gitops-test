@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{service_name}}-service
+  namespace: argocd
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.teams: info
+    notifications.argoproj.io/subscribe.on-sync-status-unknown.teams: error
+    notifications.argoproj.io/subscribe.on-sync-running.teams: info
+    notifications.argoproj.io/subscribe.on-sync-failed.teams: error
+    notifications.argoproj.io/subscribe.on-health-degraded.teams: error
+    notifications.argoproj.io/subscribe.on-deployed.teams: info
+    notifications.argoproj.io/subscribe.on-deleted.teams: info
+    notifications.argoproj.io/subscribe.on-created.teams: info
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  destination:
+    namespace: {{service_name}}
+    server: 'https://kubernetes.default.svc'
+  project: {{service_name}}-applications
+  #syncPolicy:
+  #  automated:
+  #    prune: true
+  #    selfHeal: true
+  source:
+    repoURL: 'https://bitbucketfactory.melia.com/scm/ab/{{service_name}}-services.git'
+    path: pro/{{service_name}}-services

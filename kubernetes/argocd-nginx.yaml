@@ -1,0 +1,38 @@
+# Definición de API de ArgoCD para el recurso de tipo 'Application'
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+
+metadata:
+  # Nombre único de la aplicación en la consola de ArgoCD
+  name: nginx-app
+  # Namespace donde reside ArgoCD (obligatorio para que la procese)
+  namespace: argocd
+
+spec:
+  # Proyecto lógico por defecto
+  project: default
+
+  # CONFIGURACIÓN DEL ORIGEN (De dónde obtiene el software)
+  source:
+    # URL de TU repositorio de GitHub (el origen de la verdad)
+    repoURL: https://github.com/BernardinoBeltran/gitops-test.git
+    # Rama de Git que monitoriza (HEAD apunta a la rama por defecto, 'main')
+    targetRevision: HEAD
+    # Carpeta del repositorio de Git donde están los archivos YAML
+    path: kubernetes/nginx
+
+  # CONFIGURACIÓN DEL DESTINO (A dónde lo despliega en el clúster)
+  destination:
+    # URL de la API local de Kubernetes
+    server: https://kubernetes.default.svc
+    # Namespace físico donde se crearán los pods de Nginx
+    namespace: demo-app
+
+  # POLÍTICA DE SINCRONIZACIÓN
+  syncPolicy:
+    automated:
+      # Sincronización automática de cambios
+      prune: true
+      selfHeal: true
+    # Crea el namespace 'demo-app' automáticamente si no existía
+    createNamespace: true

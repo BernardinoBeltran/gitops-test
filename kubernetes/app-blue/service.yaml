@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-blue-service
+  namespace: app-blue
+spec:
+  type: ClusterIP
+  selector:
+    app: app-blue
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80

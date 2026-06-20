@@ -1,0 +1,11 @@
+from(bucket: "BD360-PRO")
+  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
+  |> filter(fn: (r) => 
+  r["_measurement"] == "http_response" and
+  r["_field"] == "http_response_code")
+  |> filter(fn: (r) =>
+  r["server"] == "https://{{dns_pro}}/api-docs" or
+  //{{service_name}}
+  r["server"] == "http://{{service_name}}-service.{{service_name}}.svc.cluster.local/api-docs")
+  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)
+  |> yield()

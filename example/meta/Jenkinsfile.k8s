@@ -1,0 +1,373 @@
+#!/usr/bin/env groovy
+def setEnvironment(){
+
+    if (env.BRANCH_NAME == 'master') {
+		env.ENVPROFILE      = "production"
+        env.ARGOCD_ENV      = "pro"
+        env.ARGOCD_HOST     = "argocd.digitalspace.corp.melia.services"
+        env.AWS_ECR         = "523853781727.dkr.ecr.eu-west-1.amazonaws.com"
+        env.SERVICE_NAME    = "${JOB_NAME.split('/')[1]}"
+        env.SERVICE_PROFILE = "production"
+        env.TAG             = env.BRANCH_NAME + '_' + env.TAG_VERSION
+        env.TAG_VERSION     = sh(returnStdout: true, script: 'git log -1 --pretty=%h').trim()
+        // Misc
+      	env.WEBHOOK_URL = "https://meliao365.webhook.office.com/webhookb2/b4707b63-66f5-433c-9f91-711a340dae72@95aa7611-d6f6-4b1c-a5aa-59e29f383065/IncomingWebhook/f6ba1e909ec249399490d6d420508dce/5bb4ddd3-042d-48db-9b86-2e8391289cf6"
+		
+    } else {
+		env.ENVPROFILE      = "development"
+        env.ARGOCD_ENV      = "dev"
+        env.ARGOCD_HOST     = "argo-cd-argocd-server.argocd.svc.cluster.local"
+        env.AWS_ECR         = "083104591331.dkr.ecr.eu-west-1.amazonaws.com"
+        env.SERVICE_NAME    = "${JOB_NAME.split('/')[1]}"
+        env.SERVICE_PROFILE = "development"
+        env.TAG             = env.BRANCH_NAME
+        // Misc
+      	env.WEBHOOK_URL = "https://meliao365.webhook.office.com/webhookb2/b4707b63-66f5-433c-9f91-711a340dae72@95aa7611-d6f6-4b1c-a5aa-59e29f383065/IncomingWebhook/956633c6ef36455589ad8180c2f16cf5/5bb4ddd3-042d-48db-9b86-2e8391289cf6"
+    }
+
+    // Vault
+    env.VAULT_SECRET_ENGINE   = "backoffice"
+    env.VAULT_SECRET_PATH     = env.SERVICE_NAME + ',' + env.SERVICE_PROFILE
+	
+    env.PROJECT_NAME    = sh(returnStdout: true, script: 'echo $GIT_URL | awk -F \'/\' \'{print $NF}\' | cut -f 1 -d \'.\'').trim()
+    env.AWS_ECR_PROJECT = env.AWS_ECR + '/' + env.PROJECT_NAME
+    env.IMAGE           = env.AWS_ECR_PROJECT + ':' + env.TAG
+    env.IMAGE_NODE_ENV  = "production"
+
+    env.SONAR_SERVER_NAME = 'SonarQube-Enterprise'
+    env.GIT_CREDENTIAL    = "delivery-bd360"
+    env.GIT_INFRA_HOST    = "bitbucketfactory.melia.com/scm/ab/"
+    env.ARGOCD_APPLICATION = "${JOB_NAME.split('/')[1]}-service"
+    env.GIT_MANIFEST_REPO = "${JOB_NAME.split('/')[1]}-services"
+}
+
+def AGENT_LABEL = null
+node('master') {
+    stage('Checkout and set agent') {
+        if (env.BRANCH_NAME == 'master') {
+            AGENT_LABEL = "bd360-worker-pro"
+        } else {
+            AGENT_LABEL = "bd360-worker-dev"
+        }
+    }
+}
+
+pipeline {
+
+    agent {
+       label "${AGENT_LABEL}"
+    }  
+
+    libraries {
+		lib("jenkins-melia-shared-library")
+	}
+
+    environment {        
+        TAG = "0.0.0"
+
+        GIT_HOST        = "bitbucketfactory.melia.com/scm/bdpor/"
+        GIT_CREDENTIAL  = "delivery-bd360"  
+	}
+
+    tools {
+        nodejs "Node-20"
+    }
+
+    options {
+        timeout(time: 20, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+    } 
+    
+    stages {
+        stage('Normal build') {
+            steps {
+                echo "Running in ${AGENT_LABEL}"
+            }
+        }
+
+
+        stage('Prepare Job') {
+			steps {
+				script{
+			        setEnvironment()
+				}
+			}
+		}
+
+        stage('CheckOut') {
+            steps {
+                // We need to explicitly checkout from SCM here
+                checkout scm
+                echo "Building ${env.JOB_NAME}..."
+            }
+        }
+
+        stage ('Install') {
+            steps {
+                script {
+                    withNPM(npmrcConfig: 'npmrc-ds-frontend') {
+                        sh "yarn --frozen-lockfile"
+                    }
+                }
+            }
+        }
+
+        // stage ('Run Tests') {
+        //     agent { 
+        //         label 'test-int'
+        //     }
+
+        //     steps {
+        //         withNPM(npmrcConfig: 'npmrc-ds-frontend') {
+        //             sh "yarn --frozen-lockfile"
+        //         }
+
+        //         sh "yarn db-test:migrate "
+
+        //         sh "yarn test:ci"
+
+        //         stash includes: 'coverage/**/*', name: 'coverage'
+        //     }
+        // }
+
+        stage('Load .env from Vault') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'master'
+                }
+            }
+
+            steps {
+                script {
+                    withCredentials([string(credentialsId: 'VAULT_ROLE_ID', variable: 'VAULT_ROLE_ID'), string(credentialsId: 'VAULT_SECRET_ID', variable: 'VAULT_SECRET_ID')]) {
+                        sh 'yarn mds-vault -r $VAULT_ROLE_ID -s $VAULT_SECRET_ID -e $VAULT_SECRET_ENGINE -p $VAULT_SECRET_PATH'
+                    }               
+                }
+            }
+        }
+
+        stage ('Build') {
+            steps {
+                script {
+                    withNPM(npmrcConfig: 'npmrc-ds-frontend') {
+                        sh "yarn tsc-build"
+                    }
+                }
+            }
+        }
+
+        stage('SonarQube Scanner') {
+			steps {
+                script {
+                    meliaSonar.scan(
+                        appName: env.PROJECT_NAME,
+                        branchName: env.BRANCH_NAME,
+                        buildNumber: env.BUILD_NUMBER,
+                        sonarServerName: env.SONAR_SERVER_NAME,
+                        dependencyCheck: false
+                    )
+                }
+			}
+		}
+
+		stage('SonarQube Quality Gate') {
+			options {
+				timeout(time: 90, unit: 'SECONDS')
+			}
+			steps {
+                catchError (buildResult: 'SUCCESS', stageResult: 'UNSTABLE', message: 'QualityGate Result Failed') {
+                    script {
+                        try {
+                        	meliaSonar.checkQualityGateResult(
+                              WAIT_SECONDS: 10,
+                              sonarServerName: env.SONAR_SERVER_NAME
+                        	)
+                        } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
+                            error "Caught: checkQualityGateResult timeout"
+                        }
+                    }
+                }
+			}
+		}
+
+        stage('Update version') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'master'
+                }
+            }
+
+            steps {
+                script {
+                    withNPM(npmrcConfig: 'npmrc-ds-frontend') {
+                        if (env.BRANCH_NAME == 'master') {
+                            TAG = sh(script: 'npm version minor -m "Update version"', returnStdout: true).trim()
+                            println TAG
+                        } else {
+                            TAG = sh(script: 'npm version patch -m "Update version"', returnStdout: true).trim()
+                            println TAG			
+                        }
+
+                        env.DIST_VERSION = TAG
+                    }
+                }
+            }
+        }
+
+		stage('Push updated version to bitbucket') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'master'
+                }
+            }
+            steps {
+                script {
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId:      GIT_CREDENTIAL, 
+                            usernameVariable:   'username',
+                            passwordVariable:   'password'
+                        )
+                    ]) {                   
+						sh 'git push https://$username:$password@${GIT_HOST}${PROJECT_NAME}.git HEAD:refs/tags/' + TAG
+                        sh 'git push https://$username:$password@${GIT_HOST}${PROJECT_NAME}.git HEAD:' + env.BRANCH_NAME
+                    }
+                }
+            }
+        }	
+
+		stage('Build docker Image') {
+        	when {
+                anyOf {
+                    branch 'develop'
+                    branch 'master'
+                }
+            }
+		    steps{
+				echo "TAG to build -> ${TAG}"
+
+				script{
+                    IMAGE = env.AWS_ECR_PROJECT + ':' + TAG
+                    echo "IMAGE to build -> ${IMAGE}"
+                    sh(script: "buildah build -t '${IMAGE}' -f Dockerfile --label 'jenkins.build.id=${env.BUILD_ID}' --label 'jenkins.project.name=${PROJECT_NAME}' --no-cache .", returnStdout: true).trim()
+                    sh(script: "buildah tag ${IMAGE} ${env.AWS_ECR_PROJECT}:latest", returnStdout: true).trim()
+				}
+			}			
+		}
+
+		stage('Publish Image') {
+        	when {
+                anyOf {
+                    branch 'develop'
+                    branch 'master'
+                }
+            }
+		    steps{
+				echo "Pushing image ${env.IMAGE} to ECR"
+
+				script{
+                    sh(script: "aws ecr get-login-password --region eu-west-1 | buildah login --username AWS --password-stdin ${AWS_ECR}", returnStdout: true).trim()
+                  	sh(script: "buildah push ${IMAGE}")
+                  	sh(script: "buildah push ${env.AWS_ECR_PROJECT}:latest")
+                    sh(script: "buildah rmi ${IMAGE}")
+                    sh(script: "buildah rmi ${env.AWS_ECR_PROJECT}:latest")
+				}
+			}			
+		}
+
+        //TAG BASED DEPLOYMENT
+        stage('Update manifest repo') {
+        	when {
+                anyOf {
+                    branch 'develop'
+                    branch 'master'
+                }
+            }
+            steps {
+                script {
+                    dir("manifest-repo"){
+                        git(
+                            url: "https://${GIT_INFRA_HOST}${GIT_MANIFEST_REPO}.git",
+                            branch: "master",
+                            changelog: true,
+                            poll: true,
+                            credentialsId: GIT_CREDENTIAL
+                        )
+                        RUNNING_TAG = sh(script: """
+                                            awk '/$AWS_ECR/' $ARGOCD_ENV/$GIT_MANIFEST_REPO/deployment.yaml | cut -d ':' -f3
+                                            """, returnStdout: true).trim()
+                        echo RUNNING_TAG
+                        sh(script: """
+                            sed -i "s/$RUNNING_TAG/$TAG/g" $ARGOCD_ENV/$GIT_MANIFEST_REPO/deployment.yaml
+                        """,returnStdout: true).trim()
+                        withCredentials([
+                        usernamePassword(
+                            credentialsId:      GIT_CREDENTIAL, 
+                            usernameVariable:   'username',
+                            passwordVariable:   'password'
+                        )
+                        ]) {
+                            sh 'git add .'
+                            sh 'git commit -m "updated image TAG"'
+                            sh 'git push https://$username:$password@${GIT_INFRA_HOST}${GIT_MANIFEST_REPO}.git HEAD:refs/heads/master'
+                        }
+                    }                  
+                }
+            }
+        }	
+        stage('ArgoCD Redeploy'){
+        	when {
+                anyOf {
+                    branch 'develop'
+                    branch 'master'
+                }
+            }
+            steps{
+                echo "Redesplegando ${env.PROJECT_NAME} en ArgoCD"
+                withCredentials([usernamePassword(credentialsId: 'argocd-admin', passwordVariable: 'ARGOCD_PASSWORD', usernameVariable: 'ARGOCD_USER')]){
+                    sh 'argocd login $ARGOCD_HOST --username $ARGOCD_USER --password $ARGOCD_PASSWORD --insecure'
+                    //TAG BASED DEPLOYMENT
+					catchError (buildResult: 'SUCCESS', stageResult: 'UNSTABLE', message: 'ArgoCDRedeploy Result Failed') {
+						script {
+							try {
+								if (env.BRANCH_NAME == 'master'){
+									sh 'argocd app sync $ARGOCD_APPLICATION'
+								} else {
+									sh 'argocd app sync $ARGOCD_APPLICATION'
+								}
+							} catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
+								error "Caught: ArgoCDRedeploy error"
+							}
+						}
+					}
+                }
+            }
+        }
+	    
+    }
+
+
+  	post {
+        success{
+            office365ConnectorSend color: '#86BC25', status: currentBuild.result, webhookUrl: "${ env.WEBHOOK_URL }",
+            message: "Deployment Successful: ${JOB_NAME} - ${currentBuild.displayName}<br>Pipeline duration: ${currentBuild.durationString.replace(' and counting', '')}<br>Job Link: ${env.BUILD_URL}"
+        }
+        unstable {
+            office365ConnectorSend color: '#FFE933', status: currentBuild.result, webhookUrl: "${ env.WEBHOOK_URL }",
+            message: "Successfully Build but Unstable. Unstable means test failure, code violation, push to remote failed etc. : ${JOB_NAME} - ${currentBuild.displayName}<br>Pipeline duration: ${currentBuild.durationString.replace(' and counting', '')}<br>Job Link: ${env.BUILD_URL}"
+        }
+        failure {
+            office365ConnectorSend color: '#ff0000', status: currentBuild.result, webhookUrl: "${ env.WEBHOOK_URL }",
+            message: "Build Failed: ${JOB_NAME} - ${currentBuild.displayName}<br>Pipeline duration: ${currentBuild.durationString.replace(' and counting', '')}<br>Job Link: ${env.BUILD_URL}"
+        }
+        always {
+            echo "Build completed with status: ${currentBuild.result}"
+            // Clean workspace after deploy
+            cleanWs()
+        }
+    }
+}

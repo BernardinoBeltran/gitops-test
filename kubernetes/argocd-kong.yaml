@@ -1,0 +1,45 @@
+# Definición de API de ArgoCD para el recurso de tipo 'Application'
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+
+metadata:
+  # Nombre único que aparecerá en el panel de control de ArgoCD
+  name: kong-api-gateway
+  # El namespace donde está instalado ArgoCD y donde leerá esta regla
+  namespace: argocd
+
+spec:
+  # Proyecto lógico en ArgoCD. 'default' es el que viene por defecto
+  project: default
+
+  # CONFIGURACIÓN DEL ORIGEN (De dónde obtiene el software)
+  source:
+    # Nombre del Chart de Helm que queremos descargar
+    chart: kong
+    # Repositorio oficial de Helm Charts de Kong
+    repoURL: https://charts.konghq.com
+    # Versión específica del Chart para asegurar estabilidad
+    targetRevision: 2.38.0
+    # Parámetros personalizados que le pasamos a Helm
+    helm:
+      parameters:
+        # Habilitamos el Ingress Controller de Kong para gestionar las rutas
+        - name: ingressController.enabled
+          value: "true"
+
+  # CONFIGURACIÓN DEL DESTINO (A dónde lo despliega en tu clúster EKS)
+  destination:
+    # URL interna de la API del clúster de Kubernetes donde se ejecuta ArgoCD
+    server: https://kubernetes.default.svc
+    # Namespace físico de Kubernetes donde se instalarán los pods de Kong
+    namespace: kong
+
+  # POLÍTICA DE SINCRONIZACIÓN
+  syncPolicy:
+    automated:
+      # Borra automáticamente del clúster lo que borres de la configuración
+      prune: true
+      # Si alguien modifica algo manualmente en el clúster, ArgoCD lo corrige
+      selfHeal: true
+    # Le dice a ArgoCD que cree el namespace 'kong' si no existe
+    createNamespace: true

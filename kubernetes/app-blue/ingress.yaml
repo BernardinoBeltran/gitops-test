@@ -1,0 +1,20 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-blue-ingress
+  namespace: app-blue
+  annotations:
+    kubernetes.io/ingress.class: kong
+    # Le dice a Kong que elimine el prefijo "/blue" antes de enviar la petición a Nginx
+    konghq.com/strip-path: "true"
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /blue
+        pathType: Prefix
+        backend:
+          service:
+            name: app-blue-service
+            port:
+              number: 80

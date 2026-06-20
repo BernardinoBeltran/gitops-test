@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: {{service_name}}
+  name: {{service_name}}-service
+  labels:
+    app: {{service_name}}-service
+    type: inbound
+    priority: critical
+    scope: integraciones
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{service_name}}-service
+  replicas: 1
+  revisionHistoryLimit: 0
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 25%
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{service_name}}-service
+        app.kubernetes.io/logging: ok
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - {{service_name}}-service
+              topologyKey: kubernetes.io/hostname
+      {{service_account_name}}
+      containers:
+        - name: {{service_name}}-service
+          image: 523853781727.dkr.ecr.eu-west-1.amazonaws.com/{{service_name}}:latest
+          imagePullPolicy: Always
+          env:{{#env_pro}}
+          - name:  {{{key}}}
+            value: '{{{value}}}'{{/env_pro}}
+          resources:
+            requests:
+              cpu: {{request_cpu_pro}}
+              memory: {{request_memory_pro}}
+            limits:
+              cpu: {{limit_cpu_pro}}
+              memory: {{limit_memory_pro}}
+          ports:
+            - name: service
+              containerPort: 9000
+          readinessProbe:
+            httpGet:
+              path: {{{ruta}}}
+              port: service
+            initialDelaySeconds: 10
+            periodSeconds: 12
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: {{{ruta}}}
+              port: service
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5

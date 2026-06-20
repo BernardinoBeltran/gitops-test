@@ -1,0 +1,20 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-s3-ingress
+  namespace: app-s3
+  annotations:
+    kubernetes.io/ingress.class: kong
+    # Eliminamos el prefijo "/s3" antes de enviárselo a Nginx
+    konghq.com/strip-path: "true"
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /s3
+        pathType: Prefix
+        backend:
+          service:
+            name: app-s3-service
+            port:
+              number: 80

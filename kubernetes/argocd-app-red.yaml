@@ -1,0 +1,30 @@
+# Recurso de tipo Application para la app Roja
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+
+metadata:
+  # Nombre de la aplicación en el panel de ArgoCD
+  name: app-red
+  # Namespace de ArgoCD
+  namespace: argocd
+
+spec:
+  project: default
+
+  # ORIGEN: Carpeta 'kubernetes/app-red' en tu repositorio de GitHub
+  source:
+    repoURL: https://github.com/BernardinoBeltran/gitops-test.git
+    targetRevision: HEAD
+    path: kubernetes/app-red
+
+  # DESTINO: Se despliega en el namespace físico 'app-red'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: app-red
+
+  # Sincronización automática activa
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    createNamespace: true

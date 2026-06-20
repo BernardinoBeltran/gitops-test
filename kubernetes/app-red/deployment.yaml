@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-red-deployment
+  namespace: app-red
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: app-red
+  template:
+    metadata:
+      labels:
+        app: app-red
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        # Montamos el volumen en la carpeta donde Nginx lee las webs por defecto
+        - name: webcontent
+          mountPath: /usr/share/nginx/html
+      volumes:
+      # Definimos el volumen que lee desde nuestro ConfigMap
+      - name: webcontent
+        configMap:
+          name: app-red-webpage

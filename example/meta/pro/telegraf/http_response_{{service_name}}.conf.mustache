@@ -1,0 +1,5 @@
+[[inputs.http_response]]
+    urls =["http://{{service_name}}-service.{{service_name}}.svc.cluster.local/api-docs","https://{{dns_pro}}/api-docs"]
+    response_timeout = "10s"
+    method = "GET"
+    follow_redirects = false

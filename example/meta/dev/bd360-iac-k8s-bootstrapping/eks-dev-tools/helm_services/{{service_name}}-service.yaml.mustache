@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{service_name}}-applications
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  destination:
+    namespace: ""
+    server: "https://kubernetes.default.svc"
+  project: addons
+  #syncPolicy:
+  #  automated:
+  #    prune: true
+  #    selfHeal: true
+  sources:
+    - repoURL: https://bitbucketfactory.melia.com/scm/ab/bd360-iac-k8s-bootstrapping
+      path: eks-dev-tools/portal-back
+      targetRevision: HEAD
+      helm:
+        valueFiles:
+          - $values/helm/dev/values.yaml
+    - repoURL: https://bitbucketfactory.melia.com/scm/ab/{{service_name}}-services
+      targetRevision: HEAD
+      ref: values

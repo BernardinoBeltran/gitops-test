@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-s3-deployment
+  namespace: app-s3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-s3
+  template:
+    metadata:
+      labels:
+        app: app-s3
+    spec:
+      # Vinculamos la ServiceAccount con los permisos IAM
+      serviceAccountName: app-s3-service-account
+      
+      # 1. Contenedor de Inicialización (Corre antes del Nginx principal)
+      initContainers:
+      - name: download-html
+        # Contenedor oficial de AWS CLI para ejecutar comandos s3
+        image: amazon/aws-cli:2.15.30
+        command:
+        - "sh"
+        - "-c"
+        # Descarga el index.html de S3 a la carpeta temporal.
+        # REEMPLAZA 'BUCKET_NAME_REEMPLAZAME' por tu bucket real (s3_bucket_name de terraform output)
+        - "aws s3 cp s3://BUCKET_NAME_REEMPLAZAME/index.html /usr/share/nginx/html/index.html"
+        volumeMounts:
+        # Montamos la carpeta compartida en el contenedor de inicialización
+        - name: shared-web-directory
+          mountPath: /usr/share/nginx/html
+          
+      # 2. Contenedor Principal (Nginx)
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        # Montamos la misma carpeta compartida. Nginx servirá el index.html descargado por el initContainer
+        - name: shared-web-directory
+          mountPath: /usr/share/nginx/html
+          
+      volumes:
+      # Un volumen temporal en memoria (emptyDir) que comparten ambos contenedores
+      - name: shared-web-directory
+        emptyDir: {}
