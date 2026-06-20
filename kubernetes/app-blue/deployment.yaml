@@ -4,7 +4,7 @@ metadata:
   name: app-blue-deployment
   namespace: app-blue
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: app-blue

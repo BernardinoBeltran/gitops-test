@@ -4,7 +4,7 @@ metadata:
   name: app-red-deployment
   namespace: app-red
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: app-red
