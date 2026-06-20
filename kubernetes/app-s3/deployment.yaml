@@ -26,7 +26,7 @@ spec:
         - "-c"
         # Descarga el index.html de S3 a la carpeta temporal.
         # REEMPLAZA 'BUCKET_NAME_REEMPLAZAME' por tu bucket real (s3_bucket_name de terraform output)
-        - "aws s3 cp s3://eks-html-content-20260620113714883500000003/index.html /usr/share/nginx/html/index.html"
+        - "aws s3 cp s3://BUCKET_NAME_REEMPLAZAME/index.html /usr/share/nginx/html/index.html"
         volumeMounts:
         # Montamos la carpeta compartida en el contenedor de inicialización
         - name: shared-web-directory

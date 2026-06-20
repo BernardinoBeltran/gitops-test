@@ -41,7 +41,7 @@ data:
         Name                opensearch
         Match               kube.*
         # REEMPLAZA 'ENDPOINT_OPENSEARCH_REEMPLAZAME' por tu opensearch_endpoint real de terraform (sin 'https://')
-        Host                vpc-eks-logs-domain-dpofxt4cixg4ns5xv2w55xh3ha.eu-north-1.es.amazonaws.com
+        Host                ENDPOINT_OPENSEARCH_REEMPLAZAME
         Port                443
         TLS                 On
         AWS_Auth            On
