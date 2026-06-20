@@ -1,4 +1,23 @@
-# 1. Grupo de Seguridad para OpenSearch (Permite tráfico de la VPC por el puerto 443)
+# 1. Generar contraseña aleatoria segura
+resource "random_password" "opensearch_password" {
+  length           = 16
+  special          = true
+  min_upper        = 1
+  min_lower        = 1
+  min_numeric      = 1
+  min_special      = 1
+  override_special = "!@#$%" # Caracteres especiales válidos para OpenSearch
+}
+
+# 2. Guardar la contraseña en AWS Systems Manager Parameter Store como SecureString
+resource "aws_ssm_parameter" "opensearch_admin_password" {
+  name        = "/eks/learning/opensearch/admin_password"
+  description = "Contraseña maestra para OpenSearch Dashboards (EKS Logs)"
+  type        = "SecureString"
+  value       = random_password.opensearch_password.result
+}
+
+# 3. Grupo de Seguridad para OpenSearch (Permite tráfico de la VPC por el puerto 443)
 resource "aws_security_group" "opensearch_sg" {
   name        = "${var.cluster_name}-opensearch-sg"
   vpc_id      = module.vpc.vpc_id
@@ -24,7 +43,7 @@ resource "aws_security_group" "opensearch_sg" {
   }
 }
 
-# 2. Dominio de Amazon OpenSearch Service (Despliegue privado en subred de la VPC)
+# 4. Dominio de Amazon OpenSearch Service (Despliegue privado en subred de la VPC)
 resource "aws_opensearch_domain" "opensearch" {
   domain_name    = "eks-logs-domain"
   engine_version = "OpenSearch_2.11"
@@ -67,7 +86,7 @@ resource "aws_opensearch_domain" "opensearch" {
     internal_user_database_enabled = true
     master_user_options {
       master_user_name     = "admin"
-      master_user_password = "OpenSearchPassword123!" # Contraseña maestra para login
+      master_user_password = random_password.opensearch_password.result
     }
   }
 
@@ -77,8 +96,9 @@ resource "aws_opensearch_domain" "opensearch" {
   }
 }
 
-# 3. Política de IAM que permite a Fluent Bit escribir logs en OpenSearch
+# 5. Política de IAM que permite a Fluent Bit escribir logs en OpenSearch
 resource "aws_iam_policy" "opensearch_write_policy" {
+
   name        = "${var.cluster_name}-opensearch-write-policy"
   description = "Permite a Fluent Bit publicar logs en Amazon OpenSearch"
 

@@ -109,160 +109,121 @@ Gracias a EKS Blueprints, ArgoCD se despliega solo durante el `terraform apply`.
 
 ---
 
-## Paso 4: Desplegar Kong usando GitOps (ArgoCD)
+## Paso 4: Configurar los Manifiestos con los Outputs de Terraform
 
-En lugar de teclear comandos `helm install` en tu terminal, crearemos un recurso de ArgoCD para que él lo instale:
+Antes de desplegar las aplicaciones mediante GitOps, debemos configurar las variables reales de infraestructura generadas por Terraform en los archivos de configuración locales.
 
-1. Aplica el archivo de aplicación de ArgoCD para Kong:
-   ```bash
-   kubectl apply -f kubernetes/argocd-kong.yaml
-   ```
-2. Si entras a la web de ArgoCD, verás una aplicación llamada `kong-api-gateway` creándose de forma visual.
-3. Una vez esté en verde (`Synced`), obtén el DNS público del balanceador creado por Kong:
-   ```bash
-   kubectl get service kong-kong-proxy -n kong
-   ```
-   Anota la dirección DNS en la columna **`EXTERNAL-IP`**.
+### 1. Variables de S3 (IRSA)
+Abre tu editor y configura las variables del microservicio que consume S3 usando los outputs de Terraform (`s3_bucket_name` y `s3_iam_role_arn`):
+*   **ServiceAccount:** Abre `kubernetes/app-s3/serviceaccount.yaml` y sustituye el valor de `eks.amazonaws.com/role-arn` por tu `s3_iam_role_arn` real.
+*   **Deployment:** Abre `kubernetes/app-s3/deployment.yaml` y en el bloque del `initContainers` sustituye `BUCKET_NAME_REEMPLAZAME` por tu `s3_bucket_name` real.
 
-> [!TIP]
-> **🔍 Comprobación:** Ejecuta `kubectl get pods -n kong` y verifica que el proxy y el ingress controller estén en `Running`. Si abres en tu terminal `curl -I http://<TU_DNS_DE_KONG>`, la respuesta debe ser `HTTP/1.1 404 Not Found` (esto es correcto, ya que el balanceador responde pero aún no tiene configurada ninguna ruta).
-
+### 2. Variables de OpenSearch (Logs)
+Configura el colector de logs Fluent Bit y su proxy inverso usando los outputs de Terraform (`opensearch_endpoint` y `opensearch_iam_role_arn`):
+*   **ServiceAccount:** Abre `kubernetes/fluent-bit/serviceaccount.yaml` y sustituye el valor de `eks.amazonaws.com/role-arn` por tu `opensearch_iam_role_arn` real.
+*   **ConfigMap:** Abre `kubernetes/fluent-bit/configmap.yaml` y en la sección `Host` del bloque `[OUTPUT]` sustituye `ENDPOINT_OPENSEARCH_REEMPLAZAME` por tu `opensearch_endpoint` real (**sin `https://` ni barras**).
+*   **Reverse Proxy Nginx:** Abre `kubernetes/fluent-bit/proxy-nginx.yaml` y en las dos líneas que contienen `ENDPOINT_OPENSEARCH_REEMPLAZAME` sustitúyelo por tu `opensearch_endpoint` real.
 
 ---
 
-## Paso 5: Desplegar la Aplicación de Ejemplo (Nginx)
+## Paso 5: Sincronizar el Repositorio de GitHub
 
-Para que ArgoCD gestione tu aplicación Nginx, esta debe estar vinculada en un repositorio de Git.
+En GitOps, Git es la única fuente de verdad. Para que ArgoCD pueda leer tus configuraciones, debes subir los cambios locales a tu repositorio de GitHub (`https://github.com/BernardinoBeltran/gitops-test`):
 
-### Opción A (GitOps con Repositorio Público - Recomendado para aprender)
-Esta opción es la más rápida porque no requiere configurar contraseñas ni claves en ArgoCD:
-1. Ya has creado el repositorio público en: `https://github.com/BernardinoBeltran/gitops-test`.
-2. Sube la carpeta `kubernetes/` de tu proyecto local a ese repositorio de GitHub.
-3. El archivo `kubernetes/argocd-nginx.yaml` ya está configurado con tu repositorio.
-4. Aplica el manifiesto en tu clúster:
+1. Sube todos los cambios locales (incluyendo la nueva estructura de carpetas) a la rama principal:
    ```bash
-   kubectl apply -f kubernetes/argocd-nginx.yaml
+   git add kubernetes/
+   git commit -m "feat: configure app values and app-of-apps structure"
+   git push origin main
    ```
-5. En la interfaz web de ArgoCD verás aparecer la aplicación `nginx-app` y cómo se sincroniza automáticamente de forma visual.
 
-### Opción B (GitOps con Repositorio Privado - Entorno Real)
-Si tu repositorio de GitHub es **privado**, debes autorizar a ArgoCD para poder descargarlo:
-* **Mediante la Interfaz Web (Fácil):** Entra en la web de ArgoCD, ve a **Settings** -> **Repositories** -> **Connect Repo**. Elige conexión vía `HTTPS` o `SSH`, introduce la URL del repositorio privado y pega tu clave privada SSH o un GitHub Personal Access Token (PAT).
-* **Mediante Código (Declarativo):** Puedes guardar tu clave SSH o Token en un Secret de Kubernetes en el namespace `argocd` con la etiqueta `argocd.argoproj.io/secret-type: repository`. ArgoCD la usará automáticamente para autenticarse.
+---
 
-### Opción C (Local Rápido - Sin usar GitOps para Nginx)
-Si no quieres subir nada a GitHub todavía y prefieres probar Nginx directamente ejecutando el comando desde tu ordenador:
+## Paso 6: Desplegar todo el Stack usando el Patrón "App of Apps"
+
+En lugar de teclear comandos `kubectl apply` para cada aplicación individual, utilizaremos el patrón **App of Apps** declarando una aplicación raíz que desplegará de forma automática todo el catálogo de microservicios:
+
+1. **Aplica la aplicación raíz de ArgoCD (Bootstrap):**
+   ```bash
+   kubectl apply -f kubernetes/bootstrap.yaml
+   ```
+2. **Monitorea el despliegue:**
+   Abre la consola web de ArgoCD (`https://localhost:8080`). Verás aparecer la aplicación raíz `root-bootstrap` y cómo, de forma instantánea, se auto-crean y organizan las 6 aplicaciones del clúster:
+   *   `kong-api-gateway` (Ingress Controller)
+   *   `nginx-app` (Aplicación de bienvenida de Nginx)
+   *   `app-red` (Aplicación web roja de demostración)
+   *   `app-blue` (Aplicación web azul de demostración)
+   *   `app-s3` (Descarga dinámica desde S3 usando IAM IRSA)
+   *   `logging-fluent-bit` (Colector centralizado de logs)
+
+---
+
+## Paso 7: Comprobaciones y Acceso a los Servicios
+
+Una vez que todas las aplicaciones en la consola de ArgoCD estén en verde (`Synced`), podemos realizar las verificaciones correspondientes:
+
+### 1. Obtener la IP Pública del Ingress (Kong)
+Ejecuta el siguiente comando para obtener la dirección DNS del balanceador de AWS:
 ```bash
-kubectl apply -f kubernetes/nginx/
+kubectl get service kong-kong-proxy -n kong
 ```
+Anota la dirección DNS en la columna **`EXTERNAL-IP`**.
+
+### 2. Probar Enrutamiento Web y Multi-Namespace
+Abre tu navegador y accede a los diferentes servicios a través de la IP de Kong:
+*   **Nginx Welcome:** `http://<TU_DNS_DE_KONG>/`
+*   **App Roja (Namespace red-app):** `http://<TU_DNS_DE_KONG>/red`
+*   **App Azul (Namespace blue-app):** `http://<TU_DNS_DE_KONG>/blue`
+*   **App S3 (Namespace app-s3):** `http://<TU_DNS_DE_KONG>/s3` (Debe cargar un HTML verde indicando que fue descargado con éxito usando permisos IAM IRSA).
 
 > [!TIP]
-> **🔍 Comprobación:** Ejecuta `kubectl get ingress -n demo-app` para comprobar que la regla de Ingress está activa. Abre tu navegador y entra en la dirección DNS larga del balanceador de Kong (Paso 4.3). **¡Verás la página de bienvenida de Nginx!**
-
+> **🔍 Comprobación:** Ejecuta `kubectl get pods -A` para validar que todos los namespaces (`kong`, `demo-app`, `red-app`, `blue-app`, `app-s3` y `logging`) tienen sus pods en estado `Running`.
 
 ---
 
-## Paso 5.1: Probar Multi-Aplicación (App Roja y App Azul)
+## Paso 8: Visualizar los Logs en OpenSearch Dashboards
 
-Para llevar la práctica al siguiente nivel y probar cómo Kong gestiona múltiples aplicaciones en namespaces separados compartiendo un único balanceador físico:
+Dado que OpenSearch es privado para máxima seguridad, usaremos un proxy inverso local para acceder a OpenSearch Dashboards (Kibana):
 
-1. Asegúrate de haber subido todo tu directorio `kubernetes/` a tu repositorio de GitHub (incluyendo las nuevas carpetas `app-red/` y `app-blue/`).
-2. Registra las nuevas aplicaciones en ArgoCD ejecutando:
+1. **Obtén la contraseña de administrador autogenerada desde AWS SSM:**
+   Ejecuta el siguiente comando en tu Mac para extraer de forma segura el secreto que generó Terraform:
    ```bash
-   kubectl apply -f kubernetes/argocd-app-red.yaml
+   aws ssm get-parameter --name "/eks/learning/opensearch/admin_password" --with-decryption --query "Parameter.Value" --output text
    ```
+2. **Establece un túnel seguro hacia el clúster:**
    ```bash
-   kubectl apply -f kubernetes/argocd-app-blue.yaml
+   kubectl port-forward svc/opensearch-proxy -n logging 8080:80
    ```
-3. Ve a la consola web de ArgoCD. Verás aparecer dos nuevas aplicaciones: `app-red` y `app-blue` organizándose solas en sus namespaces dedicados.
-4. Una vez sincronizadas en verde, prueba el enrutamiento inteligente abriendo tu navegador:
-   * **Acceso App Roja:** `http://<TU_DNS_DE_KONG>/red` (Se abrirá una página web personalizada con fondo rojo).
-   * **Acceso App Azul:** `http://<TU_DNS_DE_KONG>/blue` (Se abrirá una página web personalizada con fondo azul).
-
-> [!TIP]
-> **🔍 Comprobación:** Ejecuta `kubectl get ingress -A` para validar que tienes activos los ingress de `app-red` y `app-blue`. Si realizas peticiones a `/red` o `/blue` y Nginx te devuelve el index correcto de color, el Ingress Path-Stripping de Kong está funcionando.
-
-
-*¿Cómo funciona la magia de Kong aquí?* 
-Kong intercepta la llamada, lee la ruta (`/red` o `/blue`), y gracias a la anotación `konghq.com/strip-path: "true"` en el recurso Ingress, elimina ese prefijo antes de enviar la llamada al Nginx interno. De esta forma, cada microservicio puede programarse ignorando la ruta base externa.
-
----
-
-## Paso 5.2: Probar Permisos IAM (Cargar HTML desde S3 privado con IRSA)
-
-Este paso demuestra cómo tus Pods de Kubernetes pueden interactuar de forma segura con recursos de AWS (como S3) sin guardar claves estáticas:
-
-1. **Aplica Terraform:** Ejecuta `terraform apply` (esto creará el bucket S3 privado, subirá un archivo `index.html` y creará el Rol IAM). Al finalizar, anota los outputs:
-   * `s3_bucket_name`
-   * `s3_iam_role_arn`
-2. **Configura el ServiceAccount:** Abre `kubernetes/app-s3/serviceaccount.yaml` en tu editor y sustituye el valor de `eks.amazonaws.com/role-arn` por tu `s3_iam_role_arn` real.
-3. **Configura el Deployment:** Abre `kubernetes/app-s3/deployment.yaml` y en la sección del `initContainers` sustituye `BUCKET_NAME_REEMPLAZAME` por tu `s3_bucket_name` real.
-4. **Sube los cambios a Git:**
-   ```bash
-   git add kubernetes/app-s3/
-   git commit -m "feat: configure S3 app with real IAM Role and Bucket Name"
-   git push origin main
-   ```
-5. **Registra la aplicación en ArgoCD:**
-   ```bash
-   kubectl apply -f kubernetes/argocd-app-s3.yaml
-   ```
-
-> [!TIP]
-> **🔍 Comprobación:** Ejecuta `kubectl logs -n app-s3 deployment/app-s3 -c download-html` para leer los logs del contenedor de inicialización. Deberías ver la descarga del archivo completada con éxito. Abre tu navegador en `http://<TU_DNS_DE_KONG>/s3` y verás la página web verde recuperada desde S3.
-
-6. **Verifica el acceso:** Abre tu navegador y accede a `http://<TU_DNS_DE_KONG>/s3`.
-   * **¿Qué está ocurriendo?** Al arrancar el pod, un *initContainer* con el AWS CLI descarga el HTML desde S3. Gracias a la ServiceAccount de Kubernetes vinculada con el Rol de IAM (IRSA), AWS autentica la petición de forma segura e instantánea.
-   * **¿Quieres probar la seguridad?** Si entras en el pod y ejecutas comandos contra otro bucket de S3 privado, AWS te denegará el acceso ya que el rol asignado al pod solo permite leer este bucket concreto.
-
----
-
-## Paso 5.3: Centralización de Logs (OpenSearch + Fluent Bit)
-
-Este paso implementa la monitorización y agregación centralizada de logs a nivel de producción:
-
-1. **Obtén las variables de OpenSearch:** Ejecuta `terraform apply` en la carpeta `terraform/` y anota los nuevos outputs:
-   * `opensearch_endpoint` (URL interna privada del dominio)
-   * `opensearch_iam_role_arn` (ARN del rol IAM para el pod colector)
-2. **Configura el ServiceAccount de Fluent Bit:** Abre `kubernetes/fluent-bit/serviceaccount.yaml` y sustituye el valor de `eks.amazonaws.com/role-arn` por tu `opensearch_iam_role_arn` real.
-3. **Configura la conexión de logs:** Abre `kubernetes/fluent-bit/configmap.yaml` y en la sección del `Host` del bloque `[OUTPUT]` sustituye `ENDPOINT_OPENSEARCH_REEMPLAZAME` por tu `opensearch_endpoint` real (ej: `vpc-eks-logs-domain-xxxxx.eu-north-1.es.amazonaws.com`, **sin http/https ni barras**).
-4. **Configura el Reverse Proxy:** Abre `kubernetes/fluent-bit/proxy-nginx.yaml` y en las dos líneas que contienen `ENDPOINT_OPENSEARCH_REEMPLAZAME` sustitúyelo por tu `opensearch_endpoint` real.
-5. **Sube los cambios a tu GitHub:**
-   ```bash
-   git add kubernetes/fluent-bit/
-   git commit -m "feat: configure Fluent Bit and proxy with OpenSearch endpoint"
-   git push origin main
-   ```
-6. **Registra la aplicación de Logging en ArgoCD:**
-   ```bash
-   kubectl apply -f kubernetes/argocd-fluent-bit.yaml
-   ```
-7. **Establece un túnel seguro hacia OpenSearch Dashboards (Kibana):**
-   * Dado que el clúster de OpenSearch está aislado de forma 100% privada dentro de la VPC, ejecutaremos un túnel local hacia el Proxy Nginx que creamos en EKS:
-     ```bash
-     kubectl port-forward svc/opensearch-proxy -n logging 8080:80
-     ```
-   * Deja la terminal abierta para mantener el túnel activo.
-8. **Explora tus logs en tiempo real:**
-   * Abre en tu navegador local de tu Mac: `http://localhost:8080/_dashboards`
-   * Inicia sesión con las credenciales maestras:
+   *(Mantén esta terminal abierta para no cerrar el túnel).*
+3. **Accede a OpenSearch Dashboards:**
+   * Abre en tu navegador de tu Mac: `http://localhost:8080/_dashboards`
+   * Inicia sesión con las credenciales:
      * **Usuario:** `admin`
-     * **Contraseña:** `OpenSearchPassword123!`
+     * **Contraseña:** *La contraseña segura que obtuviste de SSM en el paso 1.*
+4. **Configura el visualizador:**
    * Ve a **Stack Management** -> **Index Patterns** -> **Create Index Pattern** y escribe `k8s-logs-*`.
-   * Ve a la pestaña **Discover** y verás fluir todos los logs de tus aplicaciones (`nginx-app`, `app-red`, `app-blue` y `app-s3`) estructurados con su metadata de Kubernetes.
+   * Selecciona `@timestamp` como campo de tiempo y crea el patrón.
+   * Ve a la sección **Discover** en el menú izquierdo para explorar en tiempo real los logs generados por `app-red`, `app-blue`, `nginx` y el tráfico de `kong`.
 
 ---
 
-## Paso 6: Limpieza Total (Evitar Costes)
+## Paso 9: Limpieza Total (Seguridad Financiera)
 
-Es extremadamente importante limpiar todo al terminar para evitar costes. Con este enfoque declarativo, la limpieza es facilísima:
+Para destruir de forma controlada el laboratorio completo y garantizar que **no te quede ningún coste remanente en AWS**, ejecuta los siguientes pasos:
 
-1. Entra a la carpeta de Terraform:
+1. **Destruye la infraestructura de Terraform:**
    ```bash
    cd terraform
-   ```
-2. Ejecuta la destrucción completa (Terraform se encargará de borrar ArgoCD, el clúster EKS, la VPC y el dominio de OpenSearch de forma ordenada):
-   ```bash
    terraform destroy -auto-approve
    ```
+2. **Limpia los recursos dinámicos e independientes (Huérfanos):**
+   Regresa a la raíz de tu workspace y ejecuta el script de limpieza automatizado para barrer cualquier residuo de discos EBS, balanceadores o logs huérfanos:
+   ```bash
+   cd ..
+   ./cleanup.sh
+   ```
+
+> [!IMPORTANT]
+> **🔍 Verificación Final:** Ejecuta `aws ec2 describe-load-balancers --query "LoadBalancerDescriptions[*].LoadBalancerName"` para cerciorarte de que no quede ningún balanceador activo en AWS.
+
 
