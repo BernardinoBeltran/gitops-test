@@ -41,5 +41,6 @@ spec:
       prune: true
       # Si alguien modifica algo manualmente en el clúster, ArgoCD lo corrige
       selfHeal: true
-    # Le dice a ArgoCD que cree el namespace 'kong' si no existe
-    createNamespace: true
+    syncOptions:
+      # Le dice a ArgoCD que cree el namespace 'kong' si no existe
+      - CreateNamespace=true

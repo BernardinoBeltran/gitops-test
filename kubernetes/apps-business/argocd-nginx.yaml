@@ -34,5 +34,6 @@ spec:
       # Sincronización automática de cambios
       prune: true
       selfHeal: true
-    # Crea el namespace 'demo-app' automáticamente si no existía
-    createNamespace: true
+    syncOptions:
+      # Crea el namespace 'demo-app' automáticamente si no existía
+      - CreateNamespace=true
