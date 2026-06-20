@@ -139,24 +139,26 @@ En GitOps, Git es la única fuente de verdad. Para que ArgoCD pueda leer tus con
 
 ---
 
-## Paso 6: Desplegar todo el Stack usando el Patrón "App of Apps"
+## Paso 6: Desplegar todo el Stack usando el Patrón "App of Apps" (Separado por Capas)
 
-En lugar de teclear comandos `kubectl apply` para cada aplicación individual, utilizaremos el patrón **App of Apps** declarando una aplicación raíz que desplegará de forma automática todo el catálogo de microservicios:
+En lugar de teclear comandos `kubectl apply` para cada recurso de forma manual, utilizaremos el patrón **App of Apps** dividido en dos capas (Infraestructura y Aplicaciones) para respetar las mejores prácticas de producción:
 
-1. **Aplica la aplicación raíz de ArgoCD (Bootstrap):**
-   ```bash
-   kubectl apply -f kubernetes/bootstrap.yaml
-   ```
-2. **Monitorea el despliegue:**
-   Abre la consola web de ArgoCD (`https://localhost:8080`). Verás aparecer la aplicación raíz `root-bootstrap` y cómo, de forma instantánea, se auto-crean y organizan las 6 aplicaciones del clúster:
-   *   `kong-api-gateway` (Ingress Controller)
-   *   `nginx-app` (Aplicación de bienvenida de Nginx)
-   *   `app-red` (Aplicación web roja de demostración)
-   *   `app-blue` (Aplicación web azul de demostración)
-   *   `app-s3` (Descarga dinámica desde S3 usando IAM IRSA)
-   *   `logging-fluent-bit` (Colector centralizado de logs)
+### 1. Desplegar Capa de Infraestructura (Kong + Fluent Bit)
+Primero instalamos los componentes de soporte y control del clúster (Ingress Controller y colector de logs):
+```bash
+kubectl apply -f kubernetes/bootstrap-infra.yaml
+```
+*En la consola web de ArgoCD verás aparecer la aplicación raíz `root-infra-bootstrap` gestionando de forma automatizada las aplicaciones `kong-api-gateway` y `logging-fluent-bit`.*
+
+### 2. Desplegar Capa de Aplicaciones de Negocio
+Una vez que Kong y Fluent Bit estén listos (`Synced` y `Running`), levantamos el catálogo de microservicios de negocio:
+```bash
+kubectl apply -f kubernetes/bootstrap-apps.yaml
+```
+*En la consola web de ArgoCD verás aparecer la aplicación raíz `root-apps-bootstrap` gestionando de forma automatizada `nginx-app`, `app-red`, `app-blue` y `app-s3`.*
 
 ---
+
 
 ## Paso 7: Comprobaciones y Acceso a los Servicios
 
